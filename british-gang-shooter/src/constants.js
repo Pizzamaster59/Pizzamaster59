@@ -2,8 +2,7 @@
 export const WEAPONS = [
     { name: "Kitchen Knife", damage: 25, range: 2, projectile: false, cooldown: 200, color: 0xcccccc },
     { name: "Cricket Bat", damage: 35, range: 3, projectile: false, cooldown: 400, color: 0x8B4513 },
-    { name: "Crossbow", damage: 50, range: 15, projectile: true, cooldown: 800, color: 0x8B4513 },
-    { name: "Sawn-off", damage: 75, range: 8, projectile: true, cooldown: 1200, color: 0x333333 }
+    { name: "Crossbow", damage: 50, range: 15, projectile: true, cooldown: 800, color: 0x8B4513 }
 ];
 
 // British gang slang messages
