@@ -169,9 +169,13 @@ export class Game {
                     
                 case 'playerJoined':
                     // Add new player
-                    if (message.player.id !== this.playerId) {
+                    if (message.player && message.player.id !== this.playerId) {
                         showMessage('A new player has joined!');
                         this.addOtherPlayer(message.player);
+                    } else if (message.id && message.id !== this.playerId) {
+                        // Alternative format where player data is at the top level
+                        showMessage('A new player has joined!');
+                        this.addOtherPlayer(message);
                     }
                     break;
                     
@@ -257,6 +261,17 @@ export class Game {
                 case 'gameEnded':
                     // Game ended
                     showMessage('Battle Royale match has ended.');
+                    
+                    // If player is dead, inform them they can respawn now
+                    if (this.player && this.player.isDead) {
+                        showMessage('You can now respawn for the next round!');
+                        
+                        // Update restart button text
+                        const restartButton = document.getElementById('restart');
+                        if (restartButton) {
+                            restartButton.textContent = 'Respawn';
+                        }
+                    }
                     break;
                     
                 case 'areaShrank':
@@ -274,8 +289,75 @@ export class Game {
                     // Someone won the game
                     if (message.winnerId === this.playerId) {
                         showMessage('VICTORY ROYALE! You are the last one standing!', true);
-                    } else {
+                    } else if (this.player.isDead) {
                         showMessage(`Game over! Another player has won.`);
+                    } else {
+                        showMessage(`You survived until the end! Winner: ${message.winnerName || 'Another player'}`);
+                    }
+                    break;
+                    
+                case 'respawnAccepted':
+                    // Server accepted our respawn request
+                    console.log('Respawn accepted');
+                    
+                    // Reset game state
+                    this.gameOver = false;
+                    
+                    // Remove game over screen
+                    this.showGameOver(false);
+                    
+                    // Reset player
+                    if (this.player) {
+                        // Recreate the player model if it was removed
+                        if (!this.scene.getObjectById(this.player.model?.id)) {
+                            this.player.createModel();
+                        }
+                        
+                        // Reset player properties
+                        this.player.health = 100;
+                        this.player.isDead = false;
+                        
+                        // Set position from server
+                        if (message.position) {
+                            this.player.position.set(
+                                message.position.x,
+                                message.position.y,
+                                message.position.z
+                            );
+                        }
+                        
+                        // Update UI
+                        this.updateUI();
+                        
+                        showMessage('You have respawned!');
+                    }
+                    break;
+                    
+                case 'respawnRejected':
+                    // Server rejected our respawn request
+                    console.log('Respawn rejected:', message.reason);
+                    showMessage(message.reason || 'Cannot respawn at this time.');
+                    break;
+                    
+                case 'playerRespawned':
+                    // Another player respawned
+                    if (message.id !== this.playerId) {
+                        const existingPlayer = this.otherPlayers.get(message.id);
+                        if (existingPlayer) {
+                            // Update existing player
+                            showMessage('A player has respawned!');
+                            existingPlayer.position.set(message.position.x, message.position.y, message.position.z);
+                            existingPlayer.rotation = message.rotation;
+                        } else {
+                            // Add new player
+                            this.addOtherPlayer({
+                                id: message.id,
+                                position: message.position,
+                                rotation: message.rotation,
+                                health: message.health,
+                                weapon: message.weapon
+                            });
+                        }
                     }
                     break;
                     
@@ -340,14 +422,39 @@ export class Game {
     
     // Handle player death in multiplayer
     handlePlayerDeath(killerId) {
+        // Show game over messages
         showMessage('You were eliminated!', true);
         if (killerId === 'zone') {
             showMessage('You died outside the safe zone!');
         } else {
             showMessage('You were eliminated by another player!');
         }
+        
+        // Set player health to 0
         this.player.health = 0;
+        
+        // Show game over screen
+        this.gameOver = true;
+        this.showGameOver(true);
+        
+        // Despawn the player model (but keep the camera)
+        if (this.player && this.player.model) {
+            // Hide the player model
+            this.scene.remove(this.player.model);
+            
+            // If the player has a weapon model, remove that too
+            if (this.player.model.weapon) {
+                this.scene.remove(this.player.model.weapon);
+            }
+        }
+        
+        // Update UI to show 0 health
         this.updateUI();
+        
+        // Prevent player from moving or attacking
+        this.player.isDead = true;
+        
+        console.log("Player has died and been despawned. Waiting for round to end.");
     }
     
     // Add another player to the scene
@@ -511,75 +618,57 @@ export class Game {
     }
     
     restart() {
-        // Reset game state
-        this.gameOver = false;
-        this.score = 0;
+        // If player was not dead, don't try to respawn
+        if (this.player && !this.player.isDead) {
+            console.log("Player is already alive, no need to respawn");
+            return;
+        }
         
-        // Clear enemies
-        this.enemies.forEach(enemy => {
-            this.scene.remove(enemy.mesh);
-        });
-        this.enemies = [];
-        
-        // Clean up other players
-        this.otherPlayers.forEach((enemy, id) => {
-            if (enemy.mesh) {
-                this.scene.remove(enemy.mesh);
-            }
-        });
-        this.otherPlayers.clear();
-        
-        // Reset player
-        this.player.health = 100;
-        this.player.position.set(0, 0.5, 0);
-        this.player.velocity.set(0, 0, 0);
-        this.player.setWeapon(this.weapons[0]);
+        console.log("Attempting to respawn...");
         
         // Send respawn request to server
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({
                 type: 'respawn'
             }));
-        }
-        
-        // Update UI
-        this.updateUI();
-        showGameOver(false);
-        
-        // Restart animation if needed
-        if (!this.animationFrameId) {
-            this.animate();
+            
+            showMessage("Requesting respawn...");
+        } else {
+            showMessage("Cannot respawn: No server connection");
         }
     }
     
     animate() {
+        this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+        
+        // Don't update game state when game is over
         if (this.gameOver) {
-            // Cancel animation when game is over
-            if (this.animationFrameId) {
-                cancelAnimationFrame(this.animationFrameId);
-                this.animationFrameId = null;
-            }
+            // Still render the scene, but don't update player
+            this.renderer.render(this.scene, this.camera);
             return;
         }
         
-        this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+        // Update player
+        if (this.player) {
+            this.player.update();
+        }
         
-        this.player.update();
-        
-        // Send player position update to server
-        this.sendPositionUpdate();
-        
-        // Update all other players (no AI logic needed, just visual updates)
+        // Update other players
         this.otherPlayers.forEach(enemy => {
-            if (enemy.mesh) {
-                enemy.mesh.position.copy(enemy.position);
-                enemy.mesh.rotation.y = enemy.rotation;
+            if (enemy.update) {
+                enemy.update();
             }
         });
         
-        // Update all projectiles
-        updateProjectiles(this);
+        // Update projectiles
+        updateProjectiles(this.projectiles, this.scene);
         
+        // Send position update to server if player is alive
+        if (this.player && !this.player.isDead) {
+            this.sendPositionUpdate();
+        }
+        
+        // Render scene
         this.renderer.render(this.scene, this.camera);
     }
     
@@ -594,9 +683,9 @@ export class Game {
             return;
         }
         
-        // Get current player position
-        const position = this.player.getPosition();
-        const rotation = this.player.getMesh().rotation.y;
+        // Get current player position directly from property
+        const position = this.player.position;
+        const rotation = this.player.model ? this.player.model.rotation.y : 0;
         
         // Send position update to server
         this.socket.send(JSON.stringify({

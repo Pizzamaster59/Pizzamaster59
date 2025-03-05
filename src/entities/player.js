@@ -17,6 +17,7 @@ export class Player {
         this.health = 100;
         this.currentWeapon = game.weapons[0];
         this.lastAttackTime = 0;
+        this.isDead = false;
         
         this.createModel();
     }
@@ -65,45 +66,77 @@ export class Player {
     }
     
     update() {
-        // Calculate velocity from key states
-        this.velocity.set(0, 0, 0);
+        // Skip movement if player is dead
+        if (this.isDead) {
+            return;
+        }
         
-        if (this.keys.up) this.velocity.z -= this.speed;
-        if (this.keys.down) this.velocity.z += this.speed;
-        if (this.keys.left) this.velocity.x -= this.speed;
-        if (this.keys.right) this.velocity.x += this.speed;
+        // Handle keyboard movement
+        this.velocity.x = 0;
+        this.velocity.z = 0;
         
-        // Normalize diagonal movement
-        if (this.velocity.length() > 0) {
+        if (this.keys.up) this.velocity.z = -this.speed;
+        if (this.keys.down) this.velocity.z = this.speed;
+        if (this.keys.left) this.velocity.x = -this.speed;
+        if (this.keys.right) this.velocity.x = this.speed;
+        
+        // Normalize velocity for diagonal movement
+        if (this.velocity.x !== 0 && this.velocity.z !== 0) {
             this.velocity.normalize().multiplyScalar(this.speed);
         }
         
-        // Update position
-        const newPosition = this.position.clone().add(this.velocity);
+        // Store old position for collision resolution
+        const oldPosition = this.position.clone();
         
-        // Check for collisions
-        if (!checkCollision(newPosition, this.size, this.game.obstacles)) {
-            this.position.copy(newPosition);
+        // Update position based on velocity
+        this.position.add(this.velocity);
+        
+        // Check boundary collisions (keep player within play area)
+        if (this.game.battleRoyaleZoneSize) {
+            const maxDistance = this.game.battleRoyaleZoneSize / 2;
+            const distanceFromCenter = Math.sqrt(this.position.x * this.position.x + this.position.z * this.position.z);
+            
+            if (distanceFromCenter > maxDistance) {
+                // Keep player within zone
+                const angle = Math.atan2(this.position.z, this.position.x);
+                this.position.x = Math.cos(angle) * maxDistance;
+                this.position.z = Math.sin(angle) * maxDistance;
+            }
+        }
+        
+        // Check collisions with obstacles
+        if (this.game.obstacles) {
+            for (const obstacle of this.game.obstacles) {
+                if (checkCollision(this.position, this.size, obstacle.position, obstacle.size)) {
+                    // Collision detected, revert to old position
+                    this.position.copy(oldPosition);
+                    break;
+                }
+            }
         }
         
         // Update model position
         this.model.position.copy(this.position);
         
-        // Update rotation
-        this.model.rotation.y = this.rotation;
-        
-        // Update camera position
-        this.game.camera.position.set(
-            this.position.x,
-            20,
-            this.position.z + 5
-        );
-        this.game.camera.lookAt(this.position);
+        // Face the direction of mouse cursor
+        if (this.game.camera) {
+            const cameraPosition = this.game.camera.position.clone();
+            this.model.lookAt(cameraPosition.x, this.model.position.y, cameraPosition.z);
+        }
     }
     
     attack() {
+        // Don't allow attacking if player is dead
+        if (this.isDead) {
+            return;
+        }
+        
         const now = Date.now();
-        if (now - this.lastAttackTime < this.currentWeapon.cooldown) return;
+        
+        // Check if cooldown has elapsed
+        if (now - this.lastAttackTime < this.currentWeapon.cooldown) {
+            return;
+        }
         
         this.lastAttackTime = now;
         
@@ -205,9 +238,12 @@ export class Player {
             this.model.material.color.set(this.game.colors.PLAYER);
         }, 100);
         
+        // Check if player is dead
         if (this.health <= 0) {
-            this.game.gameOver = true;
-            this.game.showGameOver(true);
+            // Player is now dead - the actual game over handling is done by handlePlayerDeath
+            // and other server messages. We don't set game.gameOver here since the server
+            // is the source of truth about player death.
+            console.log("Player health reduced to zero");
         }
     }
 } 

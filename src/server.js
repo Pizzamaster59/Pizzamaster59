@@ -171,21 +171,62 @@ wss.on('connection', (socket, req) => {
                     if (players.has(playerId)) {
                         const player = players.get(playerId);
                         
-                        // Update position
-                        player.position.x = message.position.x;
-                        player.position.y = message.position.y;
-                        player.position.z = message.position.z;
+                        // Only allow position updates for alive players
+                        if (player.isAlive) {
+                            // Update position
+                            player.position.x = message.position.x;
+                            player.position.y = message.position.y;
+                            player.position.z = message.position.z;
+                            
+                            // Update rotation
+                            player.rotation = message.rotation;
+                            
+                            // Broadcast to other players
+                            broadcastToAll({
+                                type: 'playerMoved',
+                                id: playerId,
+                                position: player.position,
+                                rotation: player.rotation
+                            }, playerId);
+                        }
+                    }
+                    break;
+                    
+                case 'respawn':
+                    // Handle respawn request
+                    if (players.has(playerId)) {
+                        const player = players.get(playerId);
                         
-                        // Update rotation
-                        player.rotation = message.rotation;
-                        
-                        // Broadcast to other players
-                        broadcastToAll({
-                            type: 'playerMoved',
-                            id: playerId,
-                            position: player.position,
-                            rotation: player.rotation
-                        }, playerId);
+                        // Only allow respawn if game is not in progress or player is already alive
+                        if (!gameInProgress) {
+                            // Reset player
+                            player.isAlive = true;
+                            player.health = 100;
+                            player.position = new Vector3(Math.random() * 40 - 20, 0.5, Math.random() * 40 - 20);
+                            player.weapon = 0;
+                            
+                            // Send successful respawn confirmation
+                            socket.send(JSON.stringify({
+                                type: 'respawnAccepted',
+                                position: player.position
+                            }));
+                            
+                            // Broadcast player respawn to others
+                            broadcastToAll({
+                                type: 'playerRespawned',
+                                id: playerId,
+                                position: player.position,
+                                rotation: player.rotation,
+                                health: player.health,
+                                weapon: player.weapon
+                            }, playerId);
+                        } else {
+                            // Reject respawn - game in progress
+                            socket.send(JSON.stringify({
+                                type: 'respawnRejected',
+                                reason: 'Cannot respawn during active game round'
+                            }));
+                        }
                     }
                     break;
                     
@@ -269,14 +310,23 @@ function startGame() {
     startShrinkingPlayArea();
 }
 
-// End the game
+// End current game
 function endGame() {
     gameInProgress = false;
-    console.log('Game ended');
+    gameStartTime = null;
+    currentAreaSize = STARTING_AREA_SIZE;
+    
+    console.log('Battle Royale game ended');
     
     // Broadcast game end to all players
     broadcastToAll({
         type: 'gameEnded'
+    });
+    
+    // Reset all dead players so they can respawn
+    players.forEach((player, id) => {
+        // Keep players who survived as alive
+        // Dead players will need to respawn
     });
 }
 
