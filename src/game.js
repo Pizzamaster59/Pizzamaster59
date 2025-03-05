@@ -28,7 +28,7 @@ export class Game {
         // Multiplayer specific properties
         this.socket = null;
         this.playerId = null;
-        this.otherPlayers = new Map(); // Map of player ID -> Enemy instance
+        this.otherPlayers = new Map(); // Initialize the otherPlayers Map
         this.battleRoyaleZoneSize = 100; // Initial zone size
         this.safeZoneMesh = null; // Visual indicator for the battle royale safe zone
         
