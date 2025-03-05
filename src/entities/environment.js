@@ -1,4 +1,5 @@
 import { isPositionInBuilding } from '../utils/collision.js';
+import THREE from '../three-module.js';
 
 export function createEnvironment(scene, game) {
     // Create ground

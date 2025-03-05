@@ -1,6 +1,7 @@
 import { checkCollision } from '../utils/collision.js';
 import { showMessage } from '../ui.js';
 import { createProjectile } from './projectile.js';
+import THREE from '../three-module.js';
 
 export class Player {
     constructor(scene, game) {

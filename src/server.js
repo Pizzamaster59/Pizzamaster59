@@ -33,6 +33,24 @@ const MAX_PLAYERS = 10;
 const STARTING_AREA_SIZE = 100;
 let currentAreaSize = STARTING_AREA_SIZE;
 
+// Fix for THREE.Vector3 in Node.js environment
+class Vector3 {
+    constructor(x = 0, y = 0, z = 0) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+    
+    clone() {
+        return new Vector3(this.x, this.y, this.z);
+    }
+}
+
+// Define THREE before it's used
+const THREE = {
+    Vector3: Vector3
+};
+
 // Handle new WebSocket connections
 wss.on('connection', (ws) => {
     // Assign unique ID to player
@@ -418,19 +436,6 @@ setInterval(() => {
         console.log(`Current zone size: ${currentAreaSize}, Active players: ${getAlivePlayers().length}`);
     }
 }, 60000);
-
-// Fix for THREE.Vector3 in Node.js environment
-class Vector3 {
-    constructor(x = 0, y = 0, z = 0) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-    }
-    
-    clone() {
-        return new Vector3(this.x, this.y, this.z);
-    }
-}
 
 // Use our Vector3 implementation in Node.js
 if (typeof THREE === 'undefined') {

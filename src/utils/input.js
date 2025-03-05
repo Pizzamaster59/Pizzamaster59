@@ -1,3 +1,5 @@
+import THREE from '../three-module.js';
+
 export class InputHandler {
     constructor(game) {
         this.game = game;

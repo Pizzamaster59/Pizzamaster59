@@ -1,4 +1,6 @@
 // UI-related functions
+import THREE from './three-module.js';
+
 export function updateUI(score, health, currentWeapon) {
     document.getElementById('score').textContent = score;
     document.getElementById('health-bar').style.width = health + '%';

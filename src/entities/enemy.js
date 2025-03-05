@@ -1,9 +1,6 @@
-// import { checkCollision } from '../utils/collision.js';
-// import { showMessage, showFloatingMessage } from '../ui.js';
-// import { createProjectile } from './projectile.js';
-import * as THREE from 'three';
 import { checkCollision } from '../utils/collision.js';
 import { showFloatingMessage } from '../ui.js';
+import THREE from '../three-module.js';
 
 // Multiplayer implementation will replace NPC enemies
 export class Enemy {
@@ -41,6 +38,13 @@ export class Enemy {
         this.mesh.receiveShadow = true;
         this.scene.add(this.mesh);
         
+        // Add player indicator (floating marker above the player)
+        const markerGeometry = new THREE.SphereGeometry(0.3, 16, 8);
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+        marker.position.y = 1.5; // Position above the player
+        this.mesh.add(marker);
+        
         // Ensure weapon is defined
         if (!this.weapon) {
             this.weapon = { name: "Fists", damage: 10, range: 1, projectile: false, cooldown: 200, color: 0xcccccc };
@@ -68,11 +72,28 @@ export class Enemy {
         if (this.mesh && this.mesh.material) {
             const originalColor = this.mesh.material.color.clone();
             this.mesh.material.color.set(0xff0000);
+            
+            // Make damage more visually noticeable
+            if (this.mesh.scale) {
+                // Quick scale up and down for "hit" effect
+                const originalScale = this.mesh.scale.clone();
+                this.mesh.scale.multiplyScalar(1.2);
+                
+                setTimeout(() => {
+                    if (this.mesh && this.mesh.scale) {
+                        this.mesh.scale.copy(originalScale);
+                    }
+                }, 50);
+            }
+            
+            // Log the damage for debugging
+            console.log('Enemy took damage: ', amount);
+            
             setTimeout(() => {
                 if (this.mesh && this.mesh.material) {
                     this.mesh.material.color.set(originalColor);
                 }
-            }, 100);
+            }, 200); // Increased flash time for better visibility
         }
     }
 } 

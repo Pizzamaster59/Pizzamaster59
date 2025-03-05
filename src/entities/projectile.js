@@ -1,4 +1,5 @@
 import { checkCollision } from '../utils/collision.js';
+import THREE from '../three-module.js';
 
 export function createProjectile(scene, game, position, direction, weapon, isEnemy) {
     // Create projectile physics object

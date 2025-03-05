@@ -5,6 +5,7 @@ import { Enemy } from './entities/enemy.js';
 import { updateProjectiles } from './entities/projectile.js';
 import { createEnvironment, spawnEnemy } from './entities/environment.js';
 import { InputHandler } from './utils/input.js';
+import THREE from './three-module.js';
 
 export class Game {
     constructor() {
@@ -340,6 +341,7 @@ export class Game {
         
         // Store in otherPlayers map
         this.otherPlayers.set(playerData.id, enemy);
+        console.log(`Added other player: ${playerData.id} at position:`, position);
     }
     
     // Remove another player from the scene
@@ -367,6 +369,13 @@ export class Game {
                 enemy.mesh.position.copy(enemy.position);
                 enemy.mesh.rotation.y = enemy.rotation;
             }
+            
+            // Log occasional updates (throttled to reduce spam)
+            if (Math.random() < 0.05) {
+                console.log(`Updated position for player ${playerId}: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
+            }
+        } else {
+            console.warn(`Cannot update position for unknown player: ${playerId}`);
         }
     }
     
