@@ -1,3 +1,6 @@
+// Game version
+export const VERSION = "0.0.1";
+
 // Weapon system
 export const WEAPONS = [
     { name: "Kitchen Knife", damage: 25, range: 2, projectile: false, cooldown: 200, color: 0xcccccc },

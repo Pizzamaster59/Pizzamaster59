@@ -5,6 +5,10 @@ export function updateUI(score, health, currentWeapon) {
     document.getElementById('weapon').textContent = 'Weapon: ' + currentWeapon.name;
 }
 
+export function updateVersion(version) {
+    document.getElementById('version').textContent = 'v' + version;
+}
+
 export function showMessage(text) {
     const messagesContainer = document.getElementById('messages');
     const message = document.createElement('div');

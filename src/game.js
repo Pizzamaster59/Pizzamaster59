@@ -1,5 +1,5 @@
-import { COLORS, WEAPONS, ENEMY_MESSAGES } from './constants.js';
-import { updateUI, showMessage, showGameOver } from './ui.js';
+import { COLORS, WEAPONS, ENEMY_MESSAGES, VERSION } from './constants.js';
+import { updateUI, showMessage, showGameOver, updateVersion } from './ui.js';
 import { Player } from './entities/player.js';
 import { Enemy } from './entities/enemy.js';
 import { updateProjectiles } from './entities/projectile.js';
@@ -18,6 +18,7 @@ export class Game {
         this.obstacles = [];
         this.score = 0;
         this.gameOver = false;
+        this.animationFrameId = null;
         
         // Game constants
         this.colors = COLORS;
@@ -49,6 +50,9 @@ export class Game {
         
         // Update UI
         this.updateUI();
+        
+        // Update version display
+        updateVersion(VERSION);
         
         // Spawn initial enemies
         for (let i = 0; i < 5; i++) {
@@ -106,14 +110,28 @@ export class Game {
     
     restart() {
         showGameOver(false);
+        
+        // Cancel any existing animation frame
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
+        
         document.body.removeChild(this.renderer.domElement);
         this.init();
     }
     
     animate() {
-        if (this.gameOver) return;
+        if (this.gameOver) {
+            // Cancel animation when game is over
+            if (this.animationFrameId) {
+                cancelAnimationFrame(this.animationFrameId);
+                this.animationFrameId = null;
+            }
+            return;
+        }
         
-        requestAnimationFrame(this.animate.bind(this));
+        this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
         
         this.player.update();
         
