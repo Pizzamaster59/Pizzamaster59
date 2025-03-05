@@ -12,7 +12,15 @@ export class Enemy {
         this.speed = 0.05 + Math.random() * 0.05;
         this.size = 1;
         this.health = 100;
-        this.weapon = game.weapons[weaponIndex];
+        
+        // Make sure we have a valid weapon
+        if (game.weapons && weaponIndex !== undefined && game.weapons[weaponIndex]) {
+            this.weapon = game.weapons[weaponIndex];
+        } else {
+            // Default fallback weapon
+            this.weapon = { name: "Fists", damage: 10, range: 1, projectile: false, cooldown: 200, color: 0xcccccc };
+        }
+        
         this.lastAttackTime = 0;
         this.lastMessageTime = 0;
         this.messageSprite = null;
@@ -31,11 +39,13 @@ export class Enemy {
         this.scene.add(this.mesh);
         
         // Add enemy weapon visual
-        const weaponGeometry = this.weapon.projectile 
+        const hasProjectile = this.weapon && this.weapon.projectile;
+        const weaponGeometry = hasProjectile
             ? new THREE.CylinderGeometry(0.1, 0.1, 1, 8)
             : new THREE.BoxGeometry(0.2, 0.1, 1);
         
-        const weaponMaterial = new THREE.MeshLambertMaterial({ color: this.weapon.color });
+        const weaponColor = this.weapon && this.weapon.color ? this.weapon.color : 0xcccccc;
+        const weaponMaterial = new THREE.MeshLambertMaterial({ color: weaponColor });
         const weaponMesh = new THREE.Mesh(weaponGeometry, weaponMaterial);
         weaponMesh.position.set(0.5, 0, 0.5);
         if (this.weapon.projectile) {
