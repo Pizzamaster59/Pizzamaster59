@@ -661,7 +661,7 @@ export class Game {
         });
         
         // Update projectiles
-        updateProjectiles(this.projectiles, this.scene);
+        updateProjectiles(this);
         
         // Send position update to server if player is alive
         if (this.player && !this.player.isDead) {
