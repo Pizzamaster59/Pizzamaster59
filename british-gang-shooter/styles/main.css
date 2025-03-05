@@ -1,0 +1,70 @@
+body { 
+    margin: 0; 
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+}
+canvas { 
+    display: block; 
+}
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    font-size: 16px;
+    text-shadow: 1px 1px 2px black;
+}
+#health {
+    margin-top: 5px;
+    width: 200px;
+    height: 20px;
+    background-color: #333;
+    border: 2px solid #555;
+}
+#health-bar {
+    height: 100%;
+    background-color: #c00;
+    width: 100%;
+    transition: width 0.3s;
+}
+#weapon {
+    margin-top: 5px;
+}
+#messages {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    color: white;
+    font-size: 16px;
+    text-shadow: 1px 1px 2px black;
+    width: 300px;
+    z-index: 10;
+}
+.message {
+    margin-bottom: 5px;
+    opacity: 1;
+    transition: opacity 1s;
+}
+#game-over {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: red;
+    font-size: 48px;
+    text-shadow: 2px 2px 4px black;
+    display: none;
+}
+#restart {
+    position: absolute;
+    top: 60%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 10px 20px;
+    font-size: 24px;
+    background-color: #333;
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: none;
+} 
