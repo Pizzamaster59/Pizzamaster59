@@ -64,33 +64,45 @@ function createBuilding(scene, game) {
 }
 
 export function spawnEnemy(scene, game) {
-    // Don't spawn if game over
-    if (game.gameOver) return;
+    // This function is now handled by websocket multiplayer functionality
+    console.log("Enemy spawning is now handled via multiplayer");
+    /* Original enemy spawning code commented out
+    // Calculate spawn position away from player
+    const spawnRadius = 20 + Math.random() * 10;
+    const spawnAngle = Math.random() * Math.PI * 2;
     
-    // Spawn position away from player
-    let x, z;
-    do {
-        x = (Math.random() - 0.5) * 80;
-        z = (Math.random() - 0.5) * 80;
-    } while (
-        (Math.abs(x - game.player.position.x) < 15 && Math.abs(z - game.player.position.z) < 15) ||
-        isPositionInBuilding(new THREE.Vector3(x, 0, z), game.obstacles)
-    );
+    let x = Math.cos(spawnAngle) * spawnRadius;
+    let z = Math.sin(spawnAngle) * spawnRadius;
+    
+    // Add player position
+    if (game && game.player) {
+        x += game.player.position.x;
+        z += game.player.position.z;
+    }
     
     // Random enemy weapon (biased toward melee weapons)
-    const weaponIndex = Math.random() < 0.8 ? 
-        Math.floor(Math.random() * 2) : // 80% chance of first two weapons
-        Math.floor(Math.random() * 2) + 2; // 20% chance of last two weapons
+    let weaponIndex = 0;
+    if (game && game.weapons && Array.isArray(game.weapons)) {
+        const maxWeaponIndex = game.weapons.length - 1;
+        weaponIndex = Math.random() < 0.8 ? 
+            Math.floor(Math.random() * Math.min(2, maxWeaponIndex + 1)) : // 80% chance of first two weapons 
+            Math.min(Math.floor(Math.random() * 2) + 2, maxWeaponIndex); // 20% chance of last two weapons
+    }
     
     // Create enemy
-    const Enemy = game.Enemy;
-    const enemy = new Enemy(
-        scene,
-        game,
-        new THREE.Vector3(x, 0.5, z),
-        weaponIndex
-    );
-    
-    // Add to enemies array
-    game.enemies.push(enemy);
+    if (game && game.Enemy) {
+        const Enemy = game.Enemy;
+        const enemy = new Enemy(
+            scene,
+            game,
+            new THREE.Vector3(x, 0.5, z),
+            weaponIndex
+        );
+        
+        // Add to enemies array
+        if (game.enemies) {
+            game.enemies.push(enemy);
+        }
+    }
+    */
 } 

@@ -114,19 +114,27 @@ export class Player {
                 Math.cos(this.rotation)
             );
             
-            // Spawn projectile at player position
+            // Origin for projectile
+            const origin = new THREE.Vector3(
+                this.position.x + direction.x,
+                this.position.y,
+                this.position.z + direction.z
+            );
+            
+            // Spawn projectile locally
             createProjectile(
                 this.scene,
                 this.game,
-                new THREE.Vector3(
-                    this.position.x + direction.x,
-                    this.position.y,
-                    this.position.z + direction.z
-                ),
+                origin,
                 direction,
                 this.currentWeapon,
                 false
             );
+            
+            // Send projectile info to server for multiplayer
+            if (this.game.socket && this.game.socket.readyState === WebSocket.OPEN) {
+                this.game.sendAttack(null, true, origin, direction);
+            }
         } else {
             // Melee attack
             const direction = new THREE.Vector3(
@@ -135,9 +143,10 @@ export class Player {
                 Math.cos(this.rotation)
             );
             
-            // Check for enemies in melee range
-            for (let i = 0; i < this.game.enemies.length; i++) {
-                const enemy = this.game.enemies[i];
+            let hitAnyone = false;
+            
+            // Check for other players in melee range
+            this.game.otherPlayers.forEach((enemy, playerId) => {
                 const distance = enemy.position.distanceTo(this.position);
                 
                 if (distance <= this.currentWeapon.range) {
@@ -146,9 +155,41 @@ export class Player {
                     const dot = direction.dot(toEnemy);
                     
                     if (dot > 0.7) { // Within about 45 degrees
-                        enemy.damage(this.currentWeapon.damage);
+                        // Visual feedback only - server determines actual damage
+                        enemy.damage(10);
+                        
+                        // Notify server of hit
+                        if (this.game.socket && this.game.socket.readyState === WebSocket.OPEN) {
+                            this.game.sendAttack(playerId, false);
+                        }
+                        
+                        hitAnyone = true;
                     }
                 }
+            });
+            
+            // Legacy support for NPC enemies (for testing without multiplayer)
+            if (this.game.enemies) {
+                for (let i = 0; i < this.game.enemies.length; i++) {
+                    const enemy = this.game.enemies[i];
+                    const distance = enemy.position.distanceTo(this.position);
+                    
+                    if (distance <= this.currentWeapon.range) {
+                        // Check if enemy is in front of player using dot product
+                        const toEnemy = new THREE.Vector3().subVectors(enemy.position, this.position).normalize();
+                        const dot = direction.dot(toEnemy);
+                        
+                        if (dot > 0.7) { // Within about 45 degrees
+                            enemy.damage(this.currentWeapon.damage);
+                            hitAnyone = true;
+                        }
+                    }
+                }
+            }
+            
+            // Show message if we didn't hit anyone
+            if (!hitAnyone) {
+                // Swing animation could be added here
             }
         }
     }
