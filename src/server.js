@@ -9,8 +9,20 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+// Add CORS headers for cross-origin requests
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    next();
+});
+
 // Serve static files
 app.use(express.static(path.join(__dirname, '..')));
+
+// Add ping route to prevent Render from sleeping
+app.get('/ping', (req, res) => {
+    res.status(200).send('pong');
+});
 
 // Store connected players
 const players = new Map();
@@ -142,6 +154,11 @@ wss.on('connection', (ws) => {
         if (gameInProgress && players.size < 2) {
             endGame();
         }
+    });
+    
+    // Handle WebSocket errors
+    ws.on('error', (error) => {
+        console.error(`WebSocket error for player ${playerId}:`, error);
     });
     
     // Store WebSocket connection with player ID
@@ -369,6 +386,57 @@ function broadcastToAll(data, excludeId = null) {
             client.send(message);
         }
     });
+}
+
+// Add heartbeat for connection monitoring
+function heartbeat() {
+    this.isAlive = true;
+}
+
+// Set up heartbeat interval to track connection status
+const heartbeatInterval = setInterval(() => {
+    wss.clients.forEach(ws => {
+        if (ws.isAlive === false) {
+            return ws.terminate();
+        }
+        
+        ws.isAlive = false;
+        ws.ping(() => {});
+    });
+}, 30000);
+
+// Clean up on server close
+wss.on('close', () => {
+    clearInterval(heartbeatInterval);
+});
+
+// Set up regular status monitoring
+setInterval(() => {
+    const connectedPlayers = wss.clients.size;
+    console.log(`Status: ${connectedPlayers} players connected. Game in progress: ${gameInProgress}`);
+    if (gameInProgress) {
+        console.log(`Current zone size: ${currentAreaSize}, Active players: ${getAlivePlayers().length}`);
+    }
+}, 60000);
+
+// Fix for THREE.Vector3 in Node.js environment
+class Vector3 {
+    constructor(x = 0, y = 0, z = 0) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+    
+    clone() {
+        return new Vector3(this.x, this.y, this.z);
+    }
+}
+
+// Use our Vector3 implementation in Node.js
+if (typeof THREE === 'undefined') {
+    global.THREE = {
+        Vector3: Vector3
+    };
 }
 
 // Start the server

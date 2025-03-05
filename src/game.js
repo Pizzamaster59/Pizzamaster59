@@ -64,6 +64,11 @@ export class Game {
         // Connect to WebSocket server
         this.connectToServer();
         
+        // Add window unload handler for cleanup
+        window.addEventListener('beforeunload', () => {
+            this.cleanUp();
+        });
+        
         // Start animation
         this.animate();
     }
@@ -76,19 +81,59 @@ export class Game {
         
         console.log(`Connecting to WebSocket server at ${wsUrl}`);
         
-        this.socket = new WebSocket(wsUrl);
+        try {
+            this.socket = new WebSocket(wsUrl);
+            
+            // Set up WebSocket event handlers
+            this.socket.onopen = this.handleSocketOpen.bind(this);
+            this.socket.onmessage = this.handleSocketMessage.bind(this);
+            this.socket.onclose = this.handleSocketClose.bind(this);
+            this.socket.onerror = this.handleSocketError.bind(this);
+            
+            // Setup ping to keep connection alive
+            this.setupPing();
+        } catch (error) {
+            console.error('Failed to create WebSocket connection:', error);
+            showMessage('Failed to connect to multiplayer server. Will retry...');
+            
+            // Retry connection after delay
+            setTimeout(() => this.connectToServer(), 3000);
+        }
+    }
+    
+    // Setup ping to keep connection alive and detect disconnections
+    setupPing() {
+        // Clear any existing ping interval
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+        }
         
-        // Set up WebSocket event handlers
-        this.socket.onopen = this.handleSocketOpen.bind(this);
-        this.socket.onmessage = this.handleSocketMessage.bind(this);
-        this.socket.onclose = this.handleSocketClose.bind(this);
-        this.socket.onerror = this.handleSocketError.bind(this);
+        // Set up new ping interval
+        this.pingInterval = setInterval(() => {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                // Send lightweight ping
+                this.socket.send(JSON.stringify({
+                    type: 'ping',
+                    timestamp: Date.now()
+                }));
+            }
+        }, 15000); // Ping every 15 seconds
     }
     
     // WebSocket event handlers
     handleSocketOpen() {
         console.log('Connected to server!');
         showMessage('Connected to multiplayer server!');
+        
+        // Update connection status indicator
+        const statusElement = document.getElementById('connection-status');
+        if (statusElement) {
+            statusElement.textContent = 'Connected';
+            statusElement.style.background = 'rgba(0,128,0,0.5)';
+        }
+        
+        // Reset reconnection attempts
+        this.reconnectAttempts = 0;
     }
     
     handleSocketMessage(event) {
@@ -221,14 +266,48 @@ export class Game {
         }
     }
     
-    handleSocketClose() {
-        console.log('Disconnected from server');
-        showMessage('Disconnected from multiplayer server.');
+    handleSocketClose(event) {
+        console.log(`Disconnected from server, code: ${event.code}, reason: ${event.reason}`);
+        showMessage('Disconnected from multiplayer server. Attempting to reconnect...');
+        
+        // Update connection status indicator
+        const statusElement = document.getElementById('connection-status');
+        if (statusElement) {
+            statusElement.textContent = 'Disconnected - Reconnecting...';
+            statusElement.style.background = 'rgba(255,0,0,0.5)';
+        }
+        
+        // Clean up
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+        
+        // Try to reconnect with increasing delays
+        this.reconnectAttempts = (this.reconnectAttempts || 0) + 1;
+        const delay = Math.min(30000, Math.pow(1.5, this.reconnectAttempts) * 1000);
+        
+        console.log(`Attempting to reconnect in ${delay/1000} seconds...`);
+        
+        setTimeout(() => {
+            if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
+                this.connectToServer();
+            }
+        }, delay);
     }
     
     handleSocketError(error) {
         console.error('WebSocket error:', error);
-        showMessage('Error connecting to multiplayer server.');
+        showMessage('Error with multiplayer connection.');
+        
+        // Update connection status indicator
+        const statusElement = document.getElementById('connection-status');
+        if (statusElement) {
+            statusElement.textContent = 'Connection Error';
+            statusElement.style.background = 'rgba(255,165,0,0.5)';
+        }
+        
+        // No need to reconnect here as onclose will be called
     }
     
     // Handle player death in multiplayer
@@ -464,18 +543,30 @@ export class Game {
         if (this.socket && this.socket.readyState === WebSocket.OPEN && this.playerId) {
             // Limit update rate to avoid flooding the server
             const now = Date.now();
-            if (!this.lastUpdateTime || now - this.lastUpdateTime > 50) { // 20 updates per second
+            // Reduce to 10 updates per second to save bandwidth
+            if (!this.lastUpdateTime || now - this.lastUpdateTime > 100) {
                 this.lastUpdateTime = now;
                 
-                this.socket.send(JSON.stringify({
-                    type: 'updatePosition',
-                    position: {
-                        x: this.player.position.x,
-                        y: this.player.position.y,
-                        z: this.player.position.z
-                    },
-                    rotation: this.player.rotation
-                }));
+                // Only send if position or rotation changed
+                const posChanged = !this.lastSentPosition || 
+                    this.lastSentPosition.distanceTo(this.player.position) > 0.01;
+                const rotChanged = this.lastSentRotation !== this.player.rotation;
+                
+                if (posChanged || rotChanged) {
+                    // Save last sent values
+                    this.lastSentPosition = this.player.position.clone();
+                    this.lastSentRotation = this.player.rotation;
+                    
+                    this.socket.send(JSON.stringify({
+                        type: 'updatePosition',
+                        position: {
+                            x: this.player.position.x,
+                            y: this.player.position.y,
+                            z: this.player.position.z
+                        },
+                        rotation: this.player.rotation
+                    }));
+                }
             }
         }
     }
@@ -505,6 +596,26 @@ export class Game {
             }
             
             this.socket.send(JSON.stringify(message));
+        }
+    }
+    
+    // Clean up resources when game ends or page unloads
+    cleanUp() {
+        // Cancel animation frame
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
+        
+        // Clear ping interval
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+        
+        // Close WebSocket connection
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.close();
         }
     }
 } 

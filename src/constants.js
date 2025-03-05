@@ -1,5 +1,5 @@
 // Game version
-export const VERSION = "0.0.1";
+export const VERSION = "0.0.2";
 
 // Weapon system
 export const WEAPONS = [
