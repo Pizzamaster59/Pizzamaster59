@@ -140,13 +140,22 @@ export class Player {
         
         this.lastAttackTime = now;
         
+        // Get rotation for direction vector - handle potential NaN values
+        const safeRotation = isNaN(this.rotation) ? 0 : this.rotation;
+        
         if (this.currentWeapon.projectile) {
             // Create direction vector from player rotation
             const direction = new THREE.Vector3(
-                Math.sin(this.rotation),
+                Math.sin(safeRotation),
                 0,
-                Math.cos(this.rotation)
+                Math.cos(safeRotation)
             );
+            
+            // Validate direction vector
+            if (direction.lengthSq() === 0) {
+                console.error("Zero length direction vector in attack method");
+                direction.set(0, 0, 1); // Default forward
+            }
             
             // Origin for projectile
             const origin = new THREE.Vector3(
@@ -172,10 +181,15 @@ export class Player {
         } else {
             // Melee attack
             const direction = new THREE.Vector3(
-                Math.sin(this.rotation),
+                Math.sin(safeRotation),
                 0,
-                Math.cos(this.rotation)
+                Math.cos(safeRotation)
             );
+            
+            // Validate melee direction vector
+            if (direction.lengthSq() === 0) {
+                direction.set(0, 0, 1); // Default forward
+            }
             
             let hitAnyone = false;
             

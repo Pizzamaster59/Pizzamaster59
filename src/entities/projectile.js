@@ -2,6 +2,20 @@ import { checkCollision } from '../utils/collision.js';
 import THREE from '../three-module.js';
 
 export function createProjectile(scene, game, position, direction, weapon, isEnemy) {
+    // Validate inputs to prevent NaN values
+    if (!position || !direction || !weapon || 
+        isNaN(position.x) || isNaN(position.y) || isNaN(position.z) ||
+        isNaN(direction.x) || isNaN(direction.y) || isNaN(direction.z)) {
+        console.error("Invalid projectile parameters", { position, direction });
+        return; // Don't create invalid projectile
+    }
+    
+    // Ensure direction is not a zero vector
+    if (direction.lengthSq() === 0) {
+        console.error("Zero length direction vector in createProjectile");
+        direction = new THREE.Vector3(0, 0, 1); // Default forward direction
+    }
+    
     // Create projectile physics object
     const projectile = {
         position: position.clone(),

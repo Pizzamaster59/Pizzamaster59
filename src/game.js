@@ -230,6 +230,14 @@ export class Game {
                 case 'projectileFired':
                     // Another player fired a projectile
                     if (message.id !== this.playerId) {
+                        // Validate incoming data
+                        if (!message.origin || !message.direction || 
+                            isNaN(message.origin.x) || isNaN(message.origin.y) || isNaN(message.origin.z) ||
+                            isNaN(message.direction.x) || isNaN(message.direction.y) || isNaN(message.direction.z)) {
+                            console.error("Received invalid projectile data", message);
+                            break;
+                        }
+                        
                         const origin = new THREE.Vector3(
                             message.origin.x,
                             message.origin.y,
@@ -240,6 +248,13 @@ export class Game {
                             message.direction.y,
                             message.direction.z
                         );
+                        
+                        // Validate direction vector
+                        if (direction.lengthSq() === 0) {
+                            console.error("Received zero-length direction vector");
+                            direction.set(0, 0, 1); // Default forward
+                        }
+                        
                         // Create projectile in scene
                         this.createEnemyProjectile(origin, direction, message.weapon);
                     }
@@ -505,6 +520,20 @@ export class Game {
     
     // Create projectile fired by another player
     createEnemyProjectile(origin, direction, weaponIndex) {
+        // Validate inputs to prevent NaN values
+        if (!origin || !direction || 
+            isNaN(origin.x) || isNaN(origin.y) || isNaN(origin.z) ||
+            isNaN(direction.x) || isNaN(direction.y) || isNaN(direction.z)) {
+            console.error("Invalid parameters in createEnemyProjectile", { origin, direction });
+            return; // Don't create invalid projectile
+        }
+        
+        // Validate weapon index
+        if (isNaN(weaponIndex) || weaponIndex < 0 || weaponIndex >= this.weapons.length) {
+            console.error("Invalid weapon index in createEnemyProjectile", weaponIndex);
+            weaponIndex = 0; // Use default weapon
+        }
+        
         const weapon = this.weapons[weaponIndex];
         if (weapon && weapon.projectile) {
             // Mark the source player for this projectile
