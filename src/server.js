@@ -33,6 +33,13 @@ const MAX_PLAYERS = 10;
 const STARTING_AREA_SIZE = 100;
 let currentAreaSize = STARTING_AREA_SIZE;
 
+// Server-side map data
+const mapData = {
+    buildings: [],
+    grassPatches: [],
+    obstacles: []
+};
+
 // Fix for THREE.Vector3 in Node.js environment
 class Vector3 {
     constructor(x = 0, y = 0, z = 0) {
@@ -51,136 +58,193 @@ const THREE = {
     Vector3: Vector3
 };
 
+// Generate server-side map once at startup
+generateMap();
+
+// Generate random map on the server
+function generateMap() {
+    // Clear any existing map data
+    mapData.buildings = [];
+    mapData.grassPatches = [];
+    mapData.obstacles = [];
+    
+    // Add buildings
+    for (let i = 0; i < 20; i++) {
+        // Random building dimensions
+        const width = 3 + Math.random() * 8;
+        const depth = 3 + Math.random() * 8;
+        const height = 3 + Math.random() * 5;
+        
+        // Position away from center
+        let x, z;
+        do {
+            x = (Math.random() - 0.5) * 80;
+            z = (Math.random() - 0.5) * 80;
+        } while (Math.abs(x) < 10 && Math.abs(z) < 10); // Keep clear area around player
+        
+        // Create building data
+        const building = {
+            position: new Vector3(x, height/2, z),
+            size: new Vector3(width, height, depth),
+            color: Math.random() * 0.1 // HSL hue value to recreate color on client
+        };
+        
+        mapData.buildings.push(building);
+        
+        // Add to obstacles list for collision detection
+        mapData.obstacles.push({
+            position: new Vector3(x, 0, z),
+            size: new Vector3(width, height, depth)
+        });
+    }
+    
+    // Add grass patches
+    for (let i = 0; i < 15; i++) {
+        const size = 2 + Math.random() * 8;
+        
+        const grassPatch = {
+            position: new Vector3(
+                (Math.random() - 0.5) * 90,
+                0.01, // Just above ground
+                (Math.random() - 0.5) * 90
+            ),
+            size: size
+        };
+        
+        mapData.grassPatches.push(grassPatch);
+    }
+    
+    console.log(`Generated server-side map with ${mapData.buildings.length} buildings and ${mapData.grassPatches.length} grass patches`);
+}
+
 // Handle new WebSocket connections
-wss.on('connection', (ws) => {
+wss.on('connection', (socket, req) => {
+    console.log('Client connected');
+    
     // Assign unique ID to player
     const playerId = uuid();
     
-    console.log(`Player connected: ${playerId}`);
-    
-    // Initialize player
-    const player = {
+    // Create player object with initial state
+    players.set(playerId, {
         id: playerId,
-        position: new THREE.Vector3(
-            (Math.random() - 0.5) * STARTING_AREA_SIZE * 0.8,
-            0.5,
-            (Math.random() - 0.5) * STARTING_AREA_SIZE * 0.8
-        ),
+        position: new Vector3(Math.random() * 40 - 20, 0.5, Math.random() * 40 - 20),
         rotation: 0,
         health: 100,
-        weapon: 0, // Start with basic weapon
-        score: 0,
+        weapon: 0, // Start with fists
         isAlive: true
-    };
-    
-    // Add player to collection
-    players.set(playerId, player);
-    
-    // Send initial game state to new player
-    ws.send(JSON.stringify({
-        type: 'init',
-        playerId: playerId,
-        players: Array.from(players.values()),
-        gameInProgress,
-        gameStartTime,
-        areaSize: currentAreaSize
-    }));
-    
-    // Broadcast new player to all connected clients
-    broadcastToAll({
-        type: 'playerJoined',
-        player: player
     });
     
-    // Start game if we have enough players
-    if (players.size >= 2 && !gameInProgress) {
-        startGame();
-    }
+    // Send player their ID, current game state, and map data
+    socket.send(JSON.stringify({
+        type: 'playerConnected',
+        id: playerId,
+        gameInProgress: gameInProgress,
+        mapData: mapData, // Send the server-generated map
+        players: Array.from(players.entries()).map(([id, player]) => ({
+            id,
+            position: player.position,
+            rotation: player.rotation,
+            health: player.health,
+            weapon: player.weapon,
+            isAlive: player.isAlive
+        }))
+    }));
     
-    // Handle messages from client
-    ws.on('message', (message) => {
+    // Broadcast new player to everyone else
+    broadcastToAll({
+        type: 'playerJoined',
+        id: playerId,
+        position: players.get(playerId).position,
+        rotation: players.get(playerId).rotation,
+        health: players.get(playerId).health,
+        weapon: players.get(playerId).weapon
+    }, playerId);
+    
+    // Handle incoming messages
+    socket.on('message', (data) => {
         try {
-            const data = JSON.parse(message);
+            const message = JSON.parse(data);
             
-            switch (data.type) {
-                case 'updatePosition':
-                    // Update player position and rotation
+            switch (message.type) {
+                case 'playerUpdate':
+                    // Update player position
                     if (players.has(playerId)) {
                         const player = players.get(playerId);
-                        player.position = data.position;
-                        player.rotation = data.rotation;
                         
-                        // Broadcast updated position to all other players
+                        // Update position
+                        player.position.x = message.position.x;
+                        player.position.y = message.position.y;
+                        player.position.z = message.position.z;
+                        
+                        // Update rotation
+                        player.rotation = message.rotation;
+                        
+                        // Broadcast to other players
                         broadcastToAll({
                             type: 'playerMoved',
                             id: playerId,
                             position: player.position,
                             rotation: player.rotation
-                        }, playerId); // Don't send to originating player
+                        }, playerId);
                     }
                     break;
                     
                 case 'attack':
-                    // Handle player attack
-                    handleAttack(playerId, data);
+                    // Player attack
+                    handleAttack(playerId, message);
                     break;
                     
-                case 'respawn':
-                    // Handle player respawn request after death
-                    if (players.has(playerId)) {
-                        const player = players.get(playerId);
-                        // Only allow respawn if game is not in progress
-                        if (!gameInProgress) {
-                            player.isAlive = true;
-                            player.health = 100;
-                            player.position = new THREE.Vector3(
-                                (Math.random() - 0.5) * currentAreaSize * 0.8,
-                                0.5,
-                                (Math.random() - 0.5) * currentAreaSize * 0.8
-                            );
-                            player.weapon = 0;
-                            
-                            // Inform all clients of respawn
-                            broadcastToAll({
-                                type: 'playerRespawned',
-                                id: playerId,
-                                position: player.position
-                            });
-                        }
-                    }
+                case 'projectileHit':
+                    // Handle projectile hit
+                    handleProjectileHit(playerId, message);
+                    break;
+                    
+                case 'requestMapData':
+                    // Player is requesting the current map data
+                    socket.send(JSON.stringify({
+                        type: 'mapData',
+                        mapData: mapData
+                    }));
+                    break;
+                    
+                case 'ping':
+                    // Ping-pong to keep connection alive
+                    socket.send(JSON.stringify({
+                        type: 'pong'
+                    }));
                     break;
             }
         } catch (e) {
-            console.error('Error parsing message:', e);
+            console.error('Error processing message:', e);
         }
     });
     
-    // Handle disconnect
-    ws.on('close', () => {
-        console.log(`Player disconnected: ${playerId}`);
+    // Handle disconnection
+    socket.on('close', () => {
+        console.log('Client disconnected');
         
-        // Remove player from collection
-        players.delete(playerId);
-        
-        // Broadcast player left to all connected clients
-        broadcastToAll({
-            type: 'playerLeft',
-            id: playerId
-        });
-        
-        // End game if not enough players
-        if (gameInProgress && players.size < 2) {
-            endGame();
+        // Remove player from the game
+        if (players.has(playerId)) {
+            players.delete(playerId);
+            
+            // Broadcast player left
+            broadcastToAll({
+                type: 'playerLeft',
+                id: playerId
+            });
+            
+            // If game is in progress, check if we have a winner
+            if (gameInProgress) {
+                const alivePlayers = getAlivePlayers();
+                if (alivePlayers.length <= 1) {
+                    determineWinner();
+                }
+            }
         }
     });
     
-    // Handle WebSocket errors
-    ws.on('error', (error) => {
-        console.error(`WebSocket error for player ${playerId}:`, error);
-    });
-    
-    // Store WebSocket connection with player ID
-    ws.playerId = playerId;
+    // Store socket reference for later communication
+    socket.playerId = playerId;
 });
 
 // Start battle royale game
@@ -189,12 +253,16 @@ function startGame() {
     gameStartTime = Date.now();
     currentAreaSize = STARTING_AREA_SIZE;
     
+    // Generate a new map for this game
+    generateMap();
+    
     console.log('Battle Royale game started!');
     
-    // Broadcast game start to all players
+    // Broadcast game start and map data to all players
     broadcastToAll({
         type: 'gameStarted',
-        startTime: gameStartTime
+        startTime: gameStartTime,
+        mapData: mapData
     });
     
     // Start shrinking the play area over time
@@ -299,6 +367,20 @@ function handleAttack(attackerId, data) {
             }
         }
     }
+}
+
+// Handle projectile hit
+function handleProjectileHit(attackerId, data) {
+    const attacker = players.get(attackerId);
+    const targetId = data.targetId;
+    
+    if (!attacker || !attacker.isAlive || !targetId || !players.has(targetId)) return;
+    
+    const target = players.get(targetId);
+    if (!target.isAlive) return;
+    
+    // Apply the damage from the projectile
+    applyDamage(targetId, data.damage, attackerId);
 }
 
 // Apply damage to a player

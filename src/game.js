@@ -51,7 +51,8 @@ export class Game {
         this.setupScene();
         this.setupLights();
         this.createPlayer();
-        createEnvironment(this.scene, this);
+        // We no longer create the environment here - it will be created based on server data
+        // createEnvironment(this.scene, this);
         
         // Initialize input handler
         this.inputHandler = new InputHandler(this);
@@ -142,9 +143,9 @@ export class Game {
             const message = JSON.parse(event.data);
             
             switch (message.type) {
-                case 'init':
+                case 'playerConnected':
                     // Store player ID
-                    this.playerId = message.playerId;
+                    this.playerId = message.id;
                     console.log(`Assigned player ID: ${this.playerId}`);
                     
                     // Set up other players
@@ -153,6 +154,14 @@ export class Game {
                             this.addOtherPlayer(playerData);
                         }
                     });
+                    
+                    // Create environment from server map data
+                    if (message.mapData) {
+                        this.createEnvironmentFromMapData(message.mapData);
+                    } else {
+                        // If no map data was provided, request it
+                        this.requestMapData();
+                    }
                     
                     // Update battle royale zone
                     this.updateBattleRoyaleZone(message.areaSize);
@@ -235,6 +244,14 @@ export class Game {
                 case 'gameStarted':
                     // Battle royale game is starting
                     showMessage('Battle Royale match is starting!');
+                    
+                    // Clear existing obstacles and environment objects
+                    this.clearEnvironment();
+                    
+                    // Create new environment from map data
+                    if (message.mapData) {
+                        this.createEnvironmentFromMapData(message.mapData);
+                    }
                     break;
                     
                 case 'gameEnded':
@@ -259,6 +276,16 @@ export class Game {
                         showMessage('VICTORY ROYALE! You are the last one standing!', true);
                     } else {
                         showMessage(`Game over! Another player has won.`);
+                    }
+                    break;
+                    
+                case 'mapData':
+                    // Server sent map data in response to our request
+                    if (message.mapData) {
+                        // Clear existing environment
+                        this.clearEnvironment();
+                        // Create new environment from map data
+                        this.createEnvironmentFromMapData(message.mapData);
                     }
                     break;
             }
@@ -360,22 +387,12 @@ export class Game {
     
     // Update other player's position and rotation
     updateOtherPlayerPosition(playerId, position, rotation) {
-        const enemy = this.otherPlayers.get(playerId);
-        if (enemy) {
-            enemy.position.set(position.x, position.y, position.z);
-            enemy.rotation = rotation;
-            
-            if (enemy.mesh) {
-                enemy.mesh.position.copy(enemy.position);
-                enemy.mesh.rotation.y = enemy.rotation;
-            }
-            
-            // Log occasional updates (throttled to reduce spam)
-            if (Math.random() < 0.05) {
-                console.log(`Updated position for player ${playerId}: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`);
-            }
-        } else {
-            console.warn(`Cannot update position for unknown player: ${playerId}`);
+        const otherPlayer = this.otherPlayers.get(playerId);
+        if (otherPlayer) {
+            // Update position
+            otherPlayer.position.set(position.x, position.y, position.z);
+            // Update rotation
+            otherPlayer.rotation = rotation;
         }
     }
     
@@ -383,6 +400,25 @@ export class Game {
     createEnemyProjectile(origin, direction, weaponIndex) {
         const weapon = this.weapons[weaponIndex];
         if (weapon && weapon.projectile) {
+            // Mark the source player for this projectile
+            if (this.otherPlayers) {
+                // Find the player who fired this projectile based on location
+                for (const [playerId, otherPlayer] of Object.entries(this.otherPlayers)) {
+                    const distance = origin.distanceTo(otherPlayer.position);
+                    if (distance < 2) {  // Within reasonable distance
+                        otherPlayer.isProjectileSource = true;
+                        
+                        // Clear the flag after a short delay
+                        setTimeout(() => {
+                            if (this.otherPlayers && this.otherPlayers[playerId]) {
+                                this.otherPlayers[playerId].isProjectileSource = false;
+                            }
+                        }, 100);
+                        break;
+                    }
+                }
+            }
+            
             createProjectile(
                 this.scene,
                 this,
@@ -549,35 +585,29 @@ export class Game {
     
     // Send position update to server
     sendPositionUpdate() {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN && this.playerId) {
-            // Limit update rate to avoid flooding the server
-            const now = Date.now();
-            // Reduce to 10 updates per second to save bandwidth
-            if (!this.lastUpdateTime || now - this.lastUpdateTime > 100) {
-                this.lastUpdateTime = now;
-                
-                // Only send if position or rotation changed
-                const posChanged = !this.lastSentPosition || 
-                    this.lastSentPosition.distanceTo(this.player.position) > 0.01;
-                const rotChanged = this.lastSentRotation !== this.player.rotation;
-                
-                if (posChanged || rotChanged) {
-                    // Save last sent values
-                    this.lastSentPosition = this.player.position.clone();
-                    this.lastSentRotation = this.player.rotation;
-                    
-                    this.socket.send(JSON.stringify({
-                        type: 'updatePosition',
-                        position: {
-                            x: this.player.position.x,
-                            y: this.player.position.y,
-                            z: this.player.position.z
-                        },
-                        rotation: this.player.rotation
-                    }));
-                }
-            }
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !this.player || !this.playerId) {
+            return;
         }
+        
+        // Only send update if we're alive
+        if (this.player.health <= 0) {
+            return;
+        }
+        
+        // Get current player position
+        const position = this.player.getPosition();
+        const rotation = this.player.getMesh().rotation.y;
+        
+        // Send position update to server
+        this.socket.send(JSON.stringify({
+            type: 'playerUpdate',
+            position: {
+                x: position.x,
+                y: position.y,
+                z: position.z
+            },
+            rotation: rotation
+        }));
     }
     
     // Send attack to server
@@ -608,6 +638,19 @@ export class Game {
         }
     }
     
+    // Send projectile hit to server
+    sendProjectileHit(targetId, damage) {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            const message = {
+                type: 'projectileHit',
+                targetId: targetId,
+                damage: damage
+            };
+            
+            this.socket.send(JSON.stringify(message));
+        }
+    }
+    
     // Clean up resources when game ends or page unloads
     cleanUp() {
         // Cancel animation frame
@@ -625,6 +668,125 @@ export class Game {
         // Close WebSocket connection
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.close();
+        }
+    }
+    
+    // Create environment from server-provided map data
+    createEnvironmentFromMapData(mapData) {
+        if (!mapData) return;
+        
+        console.log('Creating environment from server map data');
+        
+        // Create ground
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: this.colors.GROUND });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        this.scene.add(ground);
+        
+        // Add buildings from map data
+        if (mapData.buildings && Array.isArray(mapData.buildings)) {
+            mapData.buildings.forEach(buildingData => {
+                // Create building mesh
+                const geometry = new THREE.BoxGeometry(
+                    buildingData.size.x, 
+                    buildingData.size.y, 
+                    buildingData.size.z
+                );
+                const material = new THREE.MeshLambertMaterial({
+                    color: new THREE.Color().setHSL(buildingData.color, 0.2, 0.5 + Math.random() * 0.2)
+                });
+                const building = new THREE.Mesh(geometry, material);
+                building.position.set(
+                    buildingData.position.x,
+                    buildingData.position.y,
+                    buildingData.position.z
+                );
+                building.castShadow = true;
+                building.receiveShadow = true;
+                this.scene.add(building);
+                
+                // Add to obstacles list for collision detection
+                this.obstacles.push({
+                    position: new THREE.Vector3(
+                        buildingData.position.x, 
+                        0, 
+                        buildingData.position.z
+                    ),
+                    size: new THREE.Vector3(
+                        buildingData.size.x,
+                        buildingData.size.y,
+                        buildingData.size.z
+                    ),
+                    mesh: building
+                });
+            });
+        }
+        
+        // Add grass patches from map data
+        if (mapData.grassPatches && Array.isArray(mapData.grassPatches)) {
+            mapData.grassPatches.forEach(grassData => {
+                const grassGeometry = new THREE.PlaneGeometry(grassData.size, grassData.size);
+                const grassMaterial = new THREE.MeshLambertMaterial({ color: this.colors.GRASS });
+                const grass = new THREE.Mesh(grassGeometry, grassMaterial);
+                grass.rotation.x = -Math.PI / 2;
+                grass.position.set(
+                    grassData.position.x,
+                    grassData.position.y,
+                    grassData.position.z
+                );
+                grass.receiveShadow = true;
+                this.scene.add(grass);
+            });
+        }
+        
+        console.log(`Created environment with ${mapData.buildings.length} buildings and ${mapData.grassPatches.length} grass patches`);
+    }
+    
+    // Clear existing environment objects
+    clearEnvironment() {
+        // Remove all obstacle meshes from the scene
+        this.obstacles.forEach(obstacle => {
+            if (obstacle.mesh && this.scene) {
+                this.scene.remove(obstacle.mesh);
+            }
+        });
+        
+        // Clear obstacles array
+        this.obstacles = [];
+        
+        // Find and remove ground and grass objects
+        // We'll need to iterate through scene children and remove them
+        if (this.scene) {
+            const objectsToRemove = [];
+            
+            this.scene.traverse(object => {
+                // Remove ground plane and grass patches (can check by geometry or material)
+                if (object instanceof THREE.Mesh) {
+                    // Check if it's a PlaneGeometry (ground or grass)
+                    if (object.geometry instanceof THREE.PlaneGeometry) {
+                        objectsToRemove.push(object);
+                    }
+                }
+            });
+            
+            // Remove the objects found
+            objectsToRemove.forEach(object => {
+                this.scene.remove(object);
+            });
+        }
+        
+        console.log('Cleared existing environment');
+    }
+    
+    // Request map data from the server
+    requestMapData() {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: 'requestMapData'
+            }));
+            console.log('Requested map data from server');
         }
     }
 } 

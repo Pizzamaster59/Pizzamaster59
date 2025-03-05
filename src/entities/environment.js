@@ -2,66 +2,42 @@ import { isPositionInBuilding } from '../utils/collision.js';
 import THREE from '../three-module.js';
 
 export function createEnvironment(scene, game) {
-    // Create ground
-    const groundGeometry = new THREE.PlaneGeometry(100, 100);
-    const groundMaterial = new THREE.MeshLambertMaterial({ color: game.colors.GROUND });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    // This function is now deprecated - environment is created from server data
+    console.log("Environment creation is now handled via server-provided map data");
     
-    // Add buildings and obstacles
-    for (let i = 0; i < 20; i++) {
-        createBuilding(scene, game);
-    }
-    
-    // Add some grass patches
-    for (let i = 0; i < 15; i++) {
-        const size = 2 + Math.random() * 8;
-        const grassGeometry = new THREE.PlaneGeometry(size, size);
-        const grassMaterial = new THREE.MeshLambertMaterial({ color: game.colors.GRASS });
-        const grass = new THREE.Mesh(grassGeometry, grassMaterial);
-        grass.rotation.x = -Math.PI / 2;
-        grass.position.set(
-            (Math.random() - 0.5) * 90,
-            0.01, // Just above ground
-            (Math.random() - 0.5) * 90
-        );
-        grass.receiveShadow = true;
-        scene.add(grass);
+    // If for some reason we don't have server data, create a basic environment
+    // This is a fallback and should not normally be used
+    if (!game.socket || game.socket.readyState !== WebSocket.OPEN) {
+        console.warn("No server connection, creating local fallback environment");
+        // Create ground
+        const groundGeometry = new THREE.PlaneGeometry(100, 100);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: game.colors.GROUND });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+        
+        // Create a simple building in the center for reference
+        const geometry = new THREE.BoxGeometry(5, 5, 5);
+        const material = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+        const building = new THREE.Mesh(geometry, material);
+        building.position.set(10, 2.5, 10);
+        building.castShadow = true;
+        building.receiveShadow = true;
+        scene.add(building);
+        
+        // Add to obstacles list for collision detection
+        game.obstacles.push({
+            position: new THREE.Vector3(10, 0, 10),
+            size: new THREE.Vector3(5, 5, 5),
+            mesh: building
+        });
     }
 }
 
+// Deprecated - kept for backward compatibility
 function createBuilding(scene, game) {
-    // Random building dimensions
-    const width = 3 + Math.random() * 8;
-    const depth = 3 + Math.random() * 8;
-    const height = 3 + Math.random() * 5;
-    
-    // Position away from center
-    let x, z;
-    do {
-        x = (Math.random() - 0.5) * 80;
-        z = (Math.random() - 0.5) * 80;
-    } while (Math.abs(x) < 10 && Math.abs(z) < 10); // Keep clear area around player
-    
-    // Create building
-    const geometry = new THREE.BoxGeometry(width, height, depth);
-    const material = new THREE.MeshLambertMaterial({ 
-        color: new THREE.Color().setHSL(Math.random() * 0.1, 0.2, 0.5 + Math.random() * 0.2)
-    });
-    const building = new THREE.Mesh(geometry, material);
-    building.position.set(x, height/2, z);
-    building.castShadow = true;
-    building.receiveShadow = true;
-    scene.add(building);
-    
-    // Add to obstacles list for collision detection
-    game.obstacles.push({
-        position: new THREE.Vector3(x, 0, z),
-        size: new THREE.Vector3(width, height, depth),
-        mesh: building
-    });
+    console.log("Building creation is now handled via server-provided map data");
 }
 
 export function spawnEnemy(scene, game) {
